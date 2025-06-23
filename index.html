@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Backrooms - V3.2 Gameplay Fix</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="scrips.js" defer></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="loading-screen" class="screen">
+        <h1>CARREGANDO...</h1>
+        <p id="loading-status">Inicializando...</p>
+    </div>
+    <div id="win-screen" class="screen">
+        <h1>VOCÊ ESCAPOU!</h1>
+        <p>Pressione F5 para jogar novamente.</p>
+    </div>
+    <div id="game-over-screen" class="screen">
+        <h1>GAME OVER</h1>
+        <p>Sua saúde chegou a zero. Pressione F5 para tentar novamente.</p>
+    </div>
+    <div id="menu-container" class="screen">
+        <h1>BACKROOMS V3.2</h1>
+        <div class="menu-options">
+            <div class="option-row"><label for="seed-input">Semente do Mapa:</label><input type="text" id="seed-input"
+                    size="15"></div>
+            <div class="option-row"><label for="nickname-input">Apelido:</label><input type="text" id="nickname-input"
+                    maxlength="16" size="12" placeholder="Seu nome"></div>
+            <div class="option-row"><label for="render-distance-slider">Dist. Renderização:</label><input type="range"
+                    id="render-distance-slider" min="2" max="6" value="3"><span id="render-distance-value">3</span>
+            </div>
+            <div class="option-row"><label for="peer-id-input">Seu ID de Conexão:</label><input type="text"
+                    id="peer-id-input" maxlength="32" size="18" placeholder="ID único para LAN"></div>
+            <div class="option-row" id="peer-id-row" style="visibility: hidden;"><span>ID do outro jogador:</span><input
+                    type="text" id="peer-connect-input" placeholder="ID do outro jogador"></div>
+            <div class="option-row"><span>Seu PeerJS ID:</span> <span id="my-peer-id"></span></div>
+        </div>
+        <button class="menu-button" id="start-button">INICIAR JOGO</button>
+    </div>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="hud-container">
+            <div id="sanity-overlay"></div>
+            <div id="damage-vignette"></div>
+            <div id="crosshair">+</div>
+            <div id="stats-container">
+                <div>VIDA: <div class="stat-bar">
+                        <div id="health-bar-fill"></div>
+                    </div>
+                </div>
+                <div>ESTAMINA: <div class="stat-bar">
+                        <div id="stamina-bar-fill"></div>
+                    </div>
+                </div>
+                <div>SANIDADE: <div class="stat-bar">
+                        <div id="sanity-bar-fill"></div>
+                    </div>
+                </div>
+                <div>FOME: <div class="stat-bar">
+                        <div id="hunger-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="hotbar-container">
+                <div class="hotbar-slot selected" id="slot-1"></div>
+                <div class="hotbar-slot" id="slot-2"></div>
+                <div class="hotbar-slot" id="slot-3"></div>
+                <div class="hotbar-slot" id="slot-4"></div>
+                <div class="hotbar-slot" id="slot-5"></div>
+            </div>
+            <div id="minimap-container"><canvas id="minimap-canvas"></canvas></div>
+            <div id="interaction-prompt"></div>
+            <div id="mic-status">MIC: ON</div>
+        </div>
+    </div>
+    <div id="remote-audio-container" style="display:none;"></div>
+    <div id="jumpscare-overlay"
+        style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9;display:none;pointer-events:none;background:rgba(0,0,0,0.95);justify-content:center;align-items:center;">
+        <img id="jumpscare-img" src="https://placehold.co/800x600/FF0000/FFFFFF?text=JUMPSCARE"
+            style="max-width:100vw;max-height:100vh;object-fit:contain;" />
+    </div>
+</body>
+
+</html>

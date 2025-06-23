@@ -1,0 +1,261 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+}
+
+.screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 100;
+    background: #000;
+}
+
+#win-screen,
+#menu-container,
+#game-over-screen {
+    display: none;
+}
+
+ /* Adicionado #game-over-screen */
+h1 {
+    font-size: 4em;
+    color: #ff0;
+    text-shadow: 3px 3px #f00;
+    animation: flicker 1.5s infinite alternate;
+}
+
+@keyframes flicker {
+
+    0%,
+    18%,
+    22%,
+    25%,
+    53%,
+    57%,
+    100% {
+        text-shadow: 3px 3px #f00, 0 0 5px #fff, 0 0 10px #fff, 0 0 20px #ff0;
+    }
+
+    20%,
+    24%,
+    55% {
+        text-shadow: none;
+    }
+}
+
+.menu-button {
+    padding: 15px 30px;
+    font-size: 1.5em;
+    background: #333;
+    border: 2px solid #fff;
+    color: #fff;
+    cursor: pointer;
+    margin: 10px;
+    width: 300px;
+}
+
+.menu-button:hover {
+    background: #555;
+}
+
+.menu-options {
+    background: rgba(0, 0, 0, 0.7);
+    padding: 20px;
+    border: 1px solid #444;
+    margin-top: 20px;
+}
+
+.option-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 10px 0;
+    width: 350px;
+}
+
+input {
+    font-family: 'Courier New', monospace;
+    background: #222;
+    border: 1px solid #888;
+    color: #fff;
+    padding: 5px;
+}
+
+#hud-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    color: white;
+    z-index: 10;
+    visibility: hidden;
+}
+
+#sanity-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: 98;
+    pointer-events: none;
+    box-shadow: inset 0 0 0px 0px rgba(0, 0, 0, 0);
+    transition: box-shadow 1s ease-in-out;
+}
+
+#damage-vignette {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: 99;
+    pointer-events: none;
+    box-shadow: inset 0 0 0px 0px rgba(255, 0, 0, 0);
+    transition: box-shadow 0.5s ease-out;
+}
+
+#damage-vignette.active {
+    box-shadow: inset 0 0 120px 60px rgba(255, 0, 0, 0.5);
+}
+
+#mic-status {
+    position: absolute;
+    bottom: 110px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 10px;
+}
+
+#crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    background: white;
+    border: 1px solid black;
+    transform: translate(-50%, -50%);
+}
+
+#stats-container {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border: 1px solid #444;
+}
+
+.stat-bar {
+    width: 200px;
+    height: 20px;
+    background: #555;
+    margin-top: 5px;
+    border: 1px solid #888;
+}
+
+.stat-bar>div {
+    height: 100%;
+    transition: width 0.2s ease-out;
+    background: #c00;
+}
+
+#stamina-bar-fill {
+    background: #0c0;
+}
+
+#sanity-bar-fill {
+    background: #00c;
+}
+
+#hunger-bar-fill {
+    background: #f90;
+}
+
+#hotbar-container {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 5px;
+}
+
+.hotbar-slot {
+    width: 60px;
+    height: 60px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #888;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1em;
+    user-select: none;
+    background-size: cover;
+    background-position: center;
+}
+
+.hotbar-slot.selected {
+    border-color: #ff0;
+}
+
+#minimap-container {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 200px;
+    height: 200px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid #555;
+}
+
+#minimap-canvas {
+    width: 100%;
+    height: 100%;
+}
+
+#interaction-prompt {
+    position: absolute;
+    top: 60%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    border-radius: 5px;
+    display: none;
+}
+
+#jumpscare-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9;
+    display: none;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.95);
+    justify-content: center;
+    align-items: center;
+}
+
+#jumpscare-img {
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+}
