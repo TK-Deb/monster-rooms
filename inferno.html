@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Backrooms - V3.2 Gameplay Fix</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: 'Courier New', monospace; cursor: crosshair; }
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 100; background: #000; }
+        #win-screen, #menu-container, #game-over-screen { display: none; } /* Adicionado #game-over-screen */
+        h1 { font-size: 4em; color: #ff0; text-shadow: 3px 3px #f00; animation: flicker 1.5s infinite alternate; }
+        @keyframes flicker { 0%, 18%, 22%, 25%, 53%, 57%, 100% { text-shadow: 3px 3px #f00, 0 0 5px #fff, 0 0 10px #fff, 0 0 20px #ff0; } 20%, 24%, 55% { text-shadow: none; } }
+        .menu-button { padding: 15px 30px; font-size: 1.5em; background: #333; border: 2px solid #fff; color: #fff; cursor: pointer; margin: 10px; width: 300px; }
+        .menu-button:hover { background: #555; }
+        .menu-options { background: rgba(0,0,0,0.7); padding: 20px; border: 1px solid #444; margin-top: 20px; }
+        .option-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; width: 350px; }
+        input { font-family: 'Courier New', monospace; background: #222; border: 1px solid #888; color: #fff; padding: 5px; }
+        #hud-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: white; z-index: 10; visibility: hidden; }
+        #sanity-overlay { position: absolute; width: 100%; height: 100%; top: 0; left: 0; z-index: 98; pointer-events: none; box-shadow: inset 0 0 0px 0px rgba(0,0,0,0); transition: box-shadow 1s ease-in-out; }
+        #damage-vignette { position: absolute; width: 100%; height: 100%; top: 0; left: 0; z-index: 99; pointer-events: none; box-shadow: inset 0 0 0px 0px rgba(255,0,0,0); transition: box-shadow 0.5s ease-out; }
+        #damage-vignette.active { box-shadow: inset 0 0 120px 60px rgba(255,0,0,0.5); }
+        #mic-status { position: absolute; bottom: 110px; right: 20px; background: rgba(0,0,0,0.5); padding: 5px 10px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: white; border: 1px solid black; transform: translate(-50%, -50%); }
+        #stats-container { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.5); padding: 10px; border: 1px solid #444; }
+        .stat-bar { width: 200px; height: 20px; background: #555; margin-top: 5px; border: 1px solid #888; }
+        .stat-bar > div { height: 100%; transition: width 0.2s ease-out; background: #c00; }
+        #stamina-bar-fill { background: #0c0; } #sanity-bar-fill { background: #00c; } #hunger-bar-fill { background: #f90; }
+        #hotbar-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; }
+        .hotbar-slot { width: 60px; height: 60px; background: rgba(0,0,0,0.5); border: 2px solid #888; display: flex; justify-content: center; align-items: center; font-size: 1em; user-select: none; background-size: cover; background-position: center; }
+        .hotbar-slot.selected { border-color: #ff0; }
+        #minimap-container { position: absolute; top: 20px; right: 20px; width: 200px; height: 200px; background: rgba(0,0,0,0.7); border: 2px solid #555; }
+        #minimap-canvas { width: 100%; height: 100%; }
+        #interaction-prompt { position: absolute; top: 60%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; display: none; }
+        #jumpscare-overlay { position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9;display:none;pointer-events:none;background:rgba(0,0,0,0.95);justify-content:center;align-items:center; }
+        #jumpscare-img { max-width:100vw;max-height:100vh;object-fit:contain; }
+    </style>
+</head>
+<body>
+    <div id="loading-screen" class="screen"><h1>CARREGANDO...</h1><p id="loading-status">Inicializando...</p></div>
+    <div id="win-screen" class="screen"><h1>VOCÊ ESCAPOU!</h1><p>Pressione F5 para jogar novamente.</p></div>
+    <div id="game-over-screen" class="screen"> <!-- Nova tela de Game Over -->
+        <h1>GAME OVER</h1>
+        <p>Sua saúde chegou a zero. Pressione F5 para tentar novamente.</p>
+    </div>
+    <div id="menu-container" class="screen">
+        <h1>BACKROOMS V3.2</h1>
+        <div class="menu-options">
+            <div class="option-row"><label for="seed-input">Semente do Mapa:</label><input type="text" id="seed-input" size="15"></div>
+            <div class="option-row"><label for="nickname-input">Nickname:</label><input type="text" id="nickname-input" maxlength="16" size="12" placeholder="Seu nome"></div>
+            <div class="option-row"><label for="render-distance-slider">Dist. Renderização:</label><input type="range" id="render-distance-slider" min="2" max="6" value="3"><span id="render-distance-value">3</span></div>
+            <div class="option-row"><label for="peer-id-input">Seu ID de Conexão:</label><input type="text" id="peer-id-input" maxlength="32" size="18" placeholder="ID único para LAN"></div>
+            <div class="option-row" id="peer-id-row" style="visibility: hidden;"><span>ID do outro jogador:</span><input type="text" id="peer-connect-input" placeholder="ID do outro jogador"></div>
+        </div>
+        <button class="menu-button" id="start-button">INICIAR JOGO</button>
+    </div>
+    <div id="game-container"><canvas id="game-canvas"></canvas>
+        <div id="hud-container">
+            <div id="sanity-overlay"></div><div id="damage-vignette"></div><div id="crosshair">+</div>
+            <div id="stats-container">
+                <div>VIDA: <div class="stat-bar"><div id="health-bar-fill"></div></div></div><div>ESTAMINA: <div class="stat-bar"><div id="stamina-bar-fill"></div></div></div>
+                <div>SANIDADE: <div class="stat-bar"><div id="sanity-bar-fill"></div></div></div><div>FOME: <div class="stat-bar"><div id="hunger-bar-fill"></div></div></div>
+            </div>
+            <div id="hotbar-container">
+                <div class="hotbar-slot selected" id="slot-1"></div><div class="hotbar-slot" id="slot-2"></div><div class="hotbar-slot" id="slot-3"></div>
+                <div class="hotbar-slot" id="slot-4"></div><div class="hotbar-slot" id="slot-5"></div>
+            </div>
+            <div id="minimap-container"><canvas id="minimap-canvas"></canvas></div><div id="interaction-prompt"></div><div id="mic-status">MIC: ON</div>
+        </div>
+    </div>
+    <div id="remote-audio-container" style="display:none;"></div>
+    <div id="jumpscare-overlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9;display:none;pointer-events:none;background:rgba(0,0,0,0.95);justify-content:center;align-items:center;">
+      <img id="jumpscare-img" src="https://placehold.co/800x600/FF0000/FFFFFF?text=JUMPSCARE" style="max-width:100vw;max-height:100vh;object-fit:contain;" />
+    </div>
+
+    <script>
+    'use strict';
+
+    const Engine = {
+        scene: null, camera: null, renderer: null, clock: null, playerLight: null, audioListener: null,
+        init() {
+            this.scene = new THREE.Scene();
+            // Fog preto/cinza bem escuro
+            this.scene.fog = new THREE.FogExp2(0x181818, 0.22); // cor escura, densidade alta
+            this.scene.background = new THREE.Color(0x181818); // fundo igual ao fog
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: false, powerPreference: "high-performance" });
+            this.renderer.setSize(window.innerWidth, window.innerHeight); this.renderer.setPixelRatio(window.devicePixelRatio * 0.7);
+            this.clock = new THREE.Clock(); 
+            // Luz ambiente fraca, mas não nula (para não deixar tudo preto)
+            this.scene.add(new THREE.AmbientLight(0x404040, 0.12));
+            // Luz do jogador: volta a ser PointLight (aura de luz fraca)
+            this.playerLight = new THREE.PointLight(0xfff2c0, 1.1, 15, 2.5); // cor amarelada, intensidade baixa, alcance curto
+            this.camera.add(this.playerLight);
+            this.scene.add(this.camera);
+            this.audioListener = new THREE.AudioListener(); this.camera.add(this.audioListener);
+            window.addEventListener('resize', () => { this.camera.aspect = window.innerWidth / window.innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(window.innerWidth, window.innerHeight); });
+        },
+        render() { this.renderer.render(this.scene, this.camera); }
+    };
+
+    const World = {
+        CHUNK_SIZE: 16, WALL_HEIGHT: 4, EXIT_POS: {x: 500, z: 500}, activeChunks: new Map(), mapSeed: '',
+        init(seed) { this.mapSeed = seed; this.activeChunks.clear(); },
+        
+        // Retorna os dados de um tile do mapa já gerado.
+        // worldX e worldZ são coordenadas do mundo (não coordenadas de tile ou local de chunk).
+        getTileData(worldX, worldZ) {
+            // Converte coordenadas do mundo para coordenadas de tile inteiras
+            const tileX = Math.floor(worldX / this.WALL_HEIGHT);
+            const tileZ = Math.floor(worldZ / this.WALL_HEIGHT);
+
+            // Converte coordenadas de tile para coordenadas de chunk
+            const chunkX = Math.floor(tileX / this.CHUNK_SIZE);
+            const chunkZ = Math.floor(tileZ / this.CHUNK_SIZE);
+
+            // Calcula as coordenadas locais dentro do chunk (0 a CHUNK_SIZE-1)
+            const localX = ((tileX % this.CHUNK_SIZE) + this.CHUNK_SIZE) % this.CHUNK_SIZE;
+            const localZ = ((tileZ % this.CHUNK_SIZE) + this.CHUNK_SIZE) % this.CHUNK_SIZE;
+
+            const chunkKey = `${chunkX},${chunkZ}`;
+            const chunk = this.activeChunks.get(chunkKey);
+
+            if (chunk && chunk.mapData) {
+                return { id: chunk.mapData[localX][localZ] };
+            }
+            
+            // Se o chunk não existe, retorna um valor padrão seguro
+            return { id: 0 };
+        },
+
+        async updateVisibleChunks(force = false) {
+            const { x: pX, z: pZ } = Player.getChunkCoords();
+
+            // Gatilho de atualização: Se as coordenadas do chunk do jogador mudaram
+            // OU se for uma atualização forçada (inicial).
+            if (!force && pX === Game.lastPlayerChunkX && pZ === Game.lastPlayerChunkZ) {
+                return;
+            }
+            Game.lastPlayerChunkX = pX;
+            Game.lastPlayerChunkZ = pZ;
+            Game.lastChunkCheck = Engine.clock.getElapsedTime(); // Atualiza o timestamp da última verificação
+
+            const chunksToLoad = new Set(); 
+            const promises = [];
+
+            // Itera sobre os chunks dentro da distância de renderização
+            for (let x = pX - Game.RENDER_DISTANCE; x <= pX + Game.RENDER_DISTANCE; x++) {
+                for (let z = pZ - Game.RENDER_DISTANCE; z <= pZ + Game.RENDER_DISTANCE; z++) {
+                    const key = `${x},${z}`; 
+                    chunksToLoad.add(key);
+                    // Se o chunk não está ativo, adiciona à lista de carregamento
+                    if (!this.activeChunks.has(key)) promises.push(this.generateChunk(x, z));
+                }
+            }
+            // Descarrega chunks que não estão mais visíveis
+            for (const [key, chunk] of this.activeChunks.entries()) { 
+                if (!chunksToLoad.has(key)) this.unloadChunk(key, chunk); 
+            }
+            await Promise.all(promises); // Aguarda o carregamento de todos os novos chunks
+        },
+
+        async generateChunk(chunkX, chunkZ) {
+            const chunkKey = `${chunkX},${chunkZ}`; 
+            const mapData = Array(this.CHUNK_SIZE).fill(0).map(() => Array(this.CHUNK_SIZE).fill(0));
+            const wallPositions = []; 
+            const chunk = { mapData, mesh: null, floor: null, ceiling: null, items: [], monsters: [], exits: [] };
+
+            // Garante que a área de spawn do jogador esteja limpa no chunk (0,0)
+            if (chunkX === 0 && chunkZ === 0 && !Game.playerSpawned) { 
+                const mid = Math.floor(this.CHUNK_SIZE / 2); 
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        mapData[mid + i][mid + j] = 0; // Limpa área de spawn
+                    }
+                }
+                Player.spawn(mid * this.WALL_HEIGHT, mid * this.WALL_HEIGHT); 
+            }
+            // Preenche o chunk com dados de tiles (paredes, itens, monstros, saídas)
+            for (let i = 0; i < this.CHUNK_SIZE; i++) {
+                for (let j = 0; j < this.CHUNK_SIZE; j++) {
+                    if (mapData[i][j] !== 0) continue; // Pula se já definido (como na área de spawn)
+
+                    // POSIÇÃO CENTRALIZADA DO TILE:
+                    const worldX = chunkX * this.CHUNK_SIZE * this.WALL_HEIGHT + i * this.WALL_HEIGHT + this.WALL_HEIGHT / 2;
+                    const worldZ = chunkZ * this.CHUNK_SIZE * this.WALL_HEIGHT + j * this.WALL_HEIGHT + this.WALL_HEIGHT / 2;
+
+                    let tileId = 0; // Padrão para vazio
+                    let entityType = null;
+
+                    // O ponto de saída é um tile fixo, independentemente da semente.
+                    if (worldX === this.EXIT_POS.x && worldZ === this.EXIT_POS.z) {
+                        tileId = 2; // Saída
+                    } else {
+                        // Usa PRNG (Pseudo-Random Number Generator) para determinar o tipo de tile.
+                        const prng = UI.Mulberry32(parseInt(this.mapSeed) + (worldX / this.WALL_HEIGHT) * 41 + (worldZ / this.WALL_HEIGHT) * 67);
+                        if (prng() < 0.35) { // 35% de chance de ser uma parede
+                            tileId = 1; // Parede
+                        } else {
+                            const itemCheck = prng();
+                            // 0.2% de chance de spawnar uma porta de saída extra (mais raro)
+                            if (itemCheck < 0.002) tileId = 2;
+                            else if (itemCheck < 0.01) entityType = 'monster'; // 1% de chance de monstro
+                            else if (itemCheck < 0.03) entityType = 'item'; // 2% de chance de item
+                            tileId = tileId || 0; // Vazio (com ou sem entidade)
+                        }
+                    }
+
+                    mapData[i][j] = tileId; // Armazena o ID do tile gerado no mapData do chunk
+
+                    // Adiciona as entidades e malhas visuais com base no tipo de tile/entidade
+                    if (tileId === 1) { // É uma parede
+                        wallPositions.push({ x: worldX, y: this.WALL_HEIGHT / 2, z: worldZ });
+                    } else if (tileId === 2) { // É uma saída
+                        this.addEntity('exit', worldX, worldZ, chunk);
+                    } else if (entityType) { // É um tile vazio com uma entidade
+                        this.addEntity(entityType, worldX, worldZ, chunk);
+                    }
+                }
+            }
+            // Cria a malha das paredes usando InstancedMesh para otimização
+            if (wallPositions.length > 0) { 
+                const wallGeo = new THREE.BoxGeometry(this.WALL_HEIGHT, this.WALL_HEIGHT, this.WALL_HEIGHT); 
+                const mesh = new THREE.InstancedMesh(wallGeo, new THREE.MeshLambertMaterial({ map: Game.assets.textures.get('wall') }), wallPositions.length); 
+                const matrix = new THREE.Matrix4(); 
+                wallPositions.forEach((pos, idx) => { matrix.setPosition(pos.x, pos.y, pos.z); mesh.setMatrixAt(idx, matrix); }); 
+                Engine.scene.add(mesh); 
+                chunk.mesh = mesh; 
+            }
+            // Cria a malha do chão
+            const floorGeo = new THREE.PlaneGeometry(this.CHUNK_SIZE * this.WALL_HEIGHT, this.CHUNK_SIZE * this.WALL_HEIGHT); 
+            const floorTex = Game.assets.textures.get('floor').clone(); 
+            floorTex.needsUpdate = true; 
+            floorTex.repeat.set(this.CHUNK_SIZE / 2, this.CHUNK_SIZE / 2); 
+            floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping; 
+            const floor = new THREE.Mesh(floorGeo, new THREE.MeshLambertMaterial({ map: floorTex })); 
+            floor.rotation.x = -Math.PI / 2; 
+            floor.position.set(chunkX * this.CHUNK_SIZE * this.WALL_HEIGHT + (this.CHUNK_SIZE / 2) * this.WALL_HEIGHT, 0, chunkZ * this.CHUNK_SIZE * this.WALL_HEIGHT + (this.CHUNK_SIZE / 2) * this.WALL_HEIGHT); 
+            Engine.scene.add(floor); 
+            chunk.floor = floor;
+            // Cria a malha do teto (ceiling) com textura diferente
+            const ceilingGeo = new THREE.PlaneGeometry(this.CHUNK_SIZE * this.WALL_HEIGHT, this.CHUNK_SIZE * this.WALL_HEIGHT);
+            const ceilingTex = Game.assets.textures.get('ceiling').clone();
+            ceilingTex.needsUpdate = true;
+            ceilingTex.repeat.set(this.CHUNK_SIZE / 2, this.CHUNK_SIZE / 2);
+            ceilingTex.wrapS = ceilingTex.wrapT = THREE.RepeatWrapping;
+            const ceiling = new THREE.Mesh(ceilingGeo, new THREE.MeshLambertMaterial({ map: ceilingTex }));
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.set(
+              chunkX * this.CHUNK_SIZE * this.WALL_HEIGHT + (this.CHUNK_SIZE / 2) * this.WALL_HEIGHT,
+              this.WALL_HEIGHT,
+              chunkZ * this.CHUNK_SIZE * this.WALL_HEIGHT + (this.CHUNK_SIZE / 2) * this.WALL_HEIGHT
+            );
+            Engine.scene.add(ceiling);
+            chunk.ceiling = ceiling;
+            // Adiciona o chunk aos chunks ativos
+            this.activeChunks.set(chunkKey, chunk);
+        },
+        addEntity(type, x, z, chunk) {
+            // Função auxiliar para encontrar tile livre mais próximo
+            function findNearestFreeTile(startX, startZ, isWallFn, maxRadius = 8) {
+                for (let r = 0; r <= maxRadius; r++) {
+                    for (let dx = -r; dx <= r; dx++) {
+                        for (let dz = -r; dz <= r; dz++) {
+                            if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue; // só borda
+                            const tx = startX + dx;
+                            const tz = startZ + dz;
+                            if (!isWallFn(tx, tz)) return { x: tx, z: tz };
+                        }
+                    }
+                }
+                return { x: startX, z: startZ }; // fallback
+            }
+            let entity;
+            let safePos = { x, z };
+            // Checa se spawnou dentro de parede
+            const isWall = (tx, tz) => {
+                const tile = World.getTileData(tx * World.WALL_HEIGHT, tz * World.WALL_HEIGHT);
+                return tile.id === 1;
+            };
+            if (isWall(Math.floor(x / World.WALL_HEIGHT), Math.floor(z / World.WALL_HEIGHT))) {
+                // Move para tile livre mais próximo
+                const res = findNearestFreeTile(Math.floor(x / World.WALL_HEIGHT), Math.floor(z / World.WALL_HEIGHT), isWall);
+                safePos.x = res.x * World.WALL_HEIGHT + World.WALL_HEIGHT / 2;
+                safePos.z = res.z * World.WALL_HEIGHT + World.WALL_HEIGHT / 2;
+            }
+            switch(type) {
+                case 'exit':
+                    // Porta de saída: Sprite 2D pixelado
+                    entity = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.assets.textures.get('exit'), fog: true, sizeAttenuation: true }));
+                    entity.scale.set(World.WALL_HEIGHT * 0.8, World.WALL_HEIGHT * 1.2, 1);
+                    entity.position.set(safePos.x, World.WALL_HEIGHT * 0.5, safePos.z);
+                    chunk.exits.push(entity);
+                    break;
+                case 'monster':
+                    entity=new THREE.Sprite(new THREE.SpriteMaterial({map:Game.assets.textures.get('monster'),fog:true}));
+                    // Escala do monstro: largura 70% da WALL_HEIGHT, altura 90% da WALL_HEIGHT
+                    entity.scale.set(World.WALL_HEIGHT * 0.7, World.WALL_HEIGHT * 0.9, 1); 
+                    entity.position.set(x,World.WALL_HEIGHT/2,z);
+                    // Adiciona hitbox cúbica (AABB) ao monstro
+                    const hitboxSize = World.WALL_HEIGHT * 0.7; // largura igual à sprite
+                    const hitboxHeight = World.WALL_HEIGHT * 0.9; // altura igual à sprite
+                    const snd=new THREE.PositionalAudio(Engine.audioListener);
+                    snd.setBuffer(Game.assets.sounds.get('monster_ambient'));
+                    snd.setRefDistance(5); // Distância de referência para o áudio posicional
+                    snd.setLoop(true);
+                    snd.play();
+                    entity.add(snd);
+                    chunk.monsters.push({
+                        sprite:entity,
+                        health:100,
+                        hitbox: {
+                            size: hitboxSize,
+                            height: hitboxHeight
+                        }
+                    }); 
+                    break;
+                case 'item':
+                    // Exemplo: comida
+                    entity = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.assets.textures.get('food'), fog: true, sizeAttenuation: true }));
+                    entity.scale.set(World.WALL_HEIGHT * 0.5, World.WALL_HEIGHT * 0.5, 1);
+                    entity.position.set(safePos.x, World.WALL_HEIGHT * 0.25, safePos.z);
+                    // Adiciona propriedade effect para uso
+                    chunk.items.push({ type: 'food', sprite: entity, effect: function() {
+                        Player.state.stats.hunger = Math.min(100, Player.state.stats.hunger + 40);
+                        play8BitSound('eat');
+                    }});
+                    break;
+                case 'stone':
+                    entity = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.assets.textures.get('stone'), fog: true }));
+                    entity.scale.set(World.WALL_HEIGHT * 0.5, World.WALL_HEIGHT * 0.5, 1);
+                    entity.position.set(safePos.x, World.WALL_HEIGHT * 0.25, safePos.z);
+                    chunk.items.push({ type: 'stone', sprite: entity });
+                    break;
+                // ...outros tipos de item (medkit, pills) podem ser adicionados aqui...
+            }
+            if (entity) Engine.scene.add(entity); // Adiciona a entidade à cena
+        },
+        unloadChunk(key, chunk) { 
+            // Remove malhas de parede e chão da cena e libera sua geometria/material
+            if (chunk.mesh) { Engine.scene.remove(chunk.mesh); chunk.mesh.geometry.dispose(); chunk.mesh.material.dispose(); } 
+            if (chunk.floor) { Engine.scene.remove(chunk.floor); chunk.floor.geometry.dispose(); chunk.floor.material.dispose(); } 
+            if (chunk.ceiling) { Engine.scene.remove(chunk.ceiling); chunk.ceiling.geometry.dispose(); chunk.ceiling.material.dispose(); } // Libera o teto
+            // Remove itens e monstros e seus sprites/áudios
+            [...chunk.items, ...chunk.monsters].forEach(e => { 
+                if (e.sprite) { 
+                    if(e.sprite.children.length > 0) e.sprite.remove(e.sprite.children[0]); // Remove áudio se existir
+                    Engine.scene.remove(e.sprite); 
+                } 
+            }); 
+            // Remove saídas
+            chunk.exits.forEach(e => Engine.scene.remove(e)); 
+            // Remove o chunk do mapa de chunks ativos
+            this.activeChunks.delete(key); 
+        },
+        // Verifica se uma posição de ponto está colidindo com uma parede
+        isColliding(pos) { 
+            // Pos é uma coordenada de mundo (THREE.Vector3)
+            return this.getTileData(pos.x, pos.z).id === 1; // Retorna true se o tile for uma parede
+        }
+    };
+
+    const Player = {
+        state: { id: null, position: new THREE.Vector3(), velocity: new THREE.Vector3(), rotation: new THREE.Euler(0,0,0,'YXZ'), stats: {}, hotbar: [], selectedSlot: 0, localStream: null, micMuted: false, nickname: 'Player', nicknameMesh: null },
+        controls: { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, sprint: false },
+        lastFootstep: 0,
+        PLAYER_RADIUS: 0.8, // Raio da caixa de colisão do jogador (ajustado para evitar bugs)
+        projectiles: [], // Lista de projéteis ativos
+
+        init() {
+            this.state.stats = { health: 100, stamina: 100, sanity: 100, hunger: 100, lastHealth: 100 };
+            this.state.hotbar = [null, null, null, null, null];
+            this.state.selectedSlot = 0;
+            this.initControls();
+            // Nickname do input
+            const nickInput = document.getElementById('nickname-input');
+            this.state.nickname = nickInput && nickInput.value ? nickInput.value : 'Player';
+            // Cria/atualiza mesh do nickname
+            if (this.state.nicknameMesh) {
+                Engine.scene.remove(this.state.nicknameMesh);
+            }
+            this.state.nicknameMesh = createNicknameMesh(this.state.nickname);
+            Engine.scene.add(this.state.nicknameMesh);
+        },
+        spawn(x, z) { 
+            // Ajusta a posição de spawn para o centro do tile e altura do jogador
+            this.state.position.set(x + World.WALL_HEIGHT / 2, World.WALL_HEIGHT / 2, z + World.WALL_HEIGHT / 2); 
+            Engine.camera.position.copy(this.state.position); 
+            Game.playerSpawned = true; 
+        },
+        update(delta) { 
+            this.updateMovement(delta); 
+            this.updateStats(delta); 
+            this.updateCamera(); 
+            this.updateProjectiles(delta); // Atualiza projéteis
+            // Atualiza posição do nickname acima do player
+            if (this.state.nicknameMesh) {
+                this.state.nicknameMesh.position.set(
+                    this.state.position.x,
+                    this.state.position.y + World.WALL_HEIGHT * 0.7,
+                    this.state.position.z
+                );
+                this.state.nicknameMesh.quaternion.copy(Engine.camera.quaternion); // Sempre de frente para a câmera
+            }
+        },
+        
+        updateMovement(delta) {
+            const normalSpeed = World.WALL_HEIGHT * 2.5;
+            const sprintSpeed = World.WALL_HEIGHT * 4.0;
+            const currentSpeed = (this.controls.sprint && this.state.stats.stamina > 0) ? sprintSpeed : normalSpeed;
+            
+            const inputMoveDirection = new THREE.Vector3();
+            if (this.controls.moveForward) inputMoveDirection.z = -1;
+            if (this.controls.moveBackward) inputMoveDirection.z = 1;
+            if (this.controls.moveLeft) inputMoveDirection.x = -1;
+            if (this.controls.moveRight) inputMoveDirection.x = 1;
+
+            // Normaliza o vetor de movimento para movimento diagonal consistente
+            if (inputMoveDirection.lengthSq() > 0) {
+                inputMoveDirection.normalize().multiplyScalar(currentSpeed * delta);
+                inputMoveDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.state.rotation.y);
+            }
+
+            // Movimento separado em X e Z para deslizamento suave
+            let newX = this.state.position.x;
+            let newZ = this.state.position.z;
+            // Testa X
+            if (inputMoveDirection.x !== 0) {
+                const testX = newX + inputMoveDirection.x;
+                if (!this.checkCollision(testX, newZ)) {
+                    newX = testX;
+                }
+            }
+            // Testa Z
+            if (inputMoveDirection.z !== 0) {
+                const testZ = newZ + inputMoveDirection.z;
+                if (!this.checkCollision(newX, testZ)) {
+                    newZ = testZ;
+                }
+            }
+            // Atualiza a posição
+            const actualMovement = new THREE.Vector3(newX - this.state.position.x, 0, newZ - this.state.position.z);
+            this.state.velocity.copy(actualMovement.divideScalar(delta));
+            this.state.position.x = newX;
+            this.state.position.z = newZ;
+
+            // Sons de passos
+            if (actualMovement.lengthSq() > 0.01) {
+                const time = Engine.clock.getElapsedTime();
+                const stepInterval = this.controls.sprint ? 0.3 : 0.4;
+                if (time - this.lastFootstep > stepInterval) {
+                    play8BitSound('footstep');
+                    this.lastFootstep = time;
+                }
+            }
+        },
+
+        // Verifica colisão do jogador em uma posição alvo (x, z)
+        // targetCenterX e targetCenterZ são as coordenadas CENTRAIS da caixa de colisão do jogador na próxima posição.
+        checkCollision(targetCenterX, targetCenterZ) {
+            const r = this.PLAYER_RADIUS;
+            const wallSize = World.WALL_HEIGHT;
+            // Calcula os limites da caixa de colisão do jogador
+            const minX = targetCenterX - r;
+            const maxX = targetCenterX + r;
+            const minZ = targetCenterZ - r;
+            const maxZ = targetCenterZ + r;
+            // Verifica todos os tiles que a caixa pode tocar
+            for (let x = Math.floor(minX / wallSize); x <= Math.floor(maxX / wallSize); x++) {
+                for (let z = Math.floor(minZ / wallSize); z <= Math.floor(maxZ / wallSize); z++) {
+                    const tile = World.getTileData(x * wallSize, z * wallSize);
+                    if (tile.id === 1) {
+                        // Checa sobreposição real
+                        const tileMinX = x * wallSize;
+                        const tileMaxX = (x + 1) * wallSize;
+                        const tileMinZ = z * wallSize;
+                        const tileMaxZ = (z + 1) * wallSize;
+                        if (maxX > tileMinX && minX < tileMaxX && maxZ > tileMinZ && minZ < tileMaxZ) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        },
+
+        updateStats(delta) { 
+            const s = this.state.stats; 
+            s.hunger -= 0.3 * delta; // Agora igual à sanidade
+            s.sanity -= 0.3 * delta; 
+            if (this.controls.sprint && s.stamina > 0) s.stamina -= 20 * delta; 
+            else if (s.stamina < 100) s.stamina += 15 * delta; 
+            if (s.hunger <= 0) { s.hunger = 0; s.health -= 5 * delta; } 
+            Object.keys(s).forEach(k => s[k] = Math.max(0, Math.min(100, s[k]))); 
+            if (s.health < s.lastHealth) { UI.showDamageEffect(); play8BitSound('damage'); } 
+            s.lastHealth = s.health; 
+            // Jumpscare: quanto menor a sanidade, maior a chance
+            if (Game.running && Math.random() < (1 - s.sanity / 100) * 0.015 * delta) {
+                UI.showJumpscare();
+                play8BitSound('jumpscare');
+                s.health = Math.max(0, s.health - 10);
+            }
+            // Verifica condição de Game Over
+            if (s.health <= 0) { 
+                Game.gameOver();
+            }
+        },
+        updateCamera() { 
+            // Interpola a posição da câmera para seguir o jogador suavemente
+            Engine.camera.position.lerp(this.state.position, 0.9); 
+            Engine.camera.quaternion.setFromEuler(this.state.rotation); 
+        },
+        getChunkCoords() { 
+            // Retorna as coordenadas do chunk atual do jogador
+            return { x: Math.floor(this.state.position.x / (World.CHUNK_SIZE * World.WALL_HEIGHT)), z: Math.floor(this.state.position.z / (World.CHUNK_SIZE * World.WALL_HEIGHT)) }; 
+        },
+        initControls() {
+            const canvas = document.getElementById('game-canvas');
+            canvas.addEventListener('click', () => { if(Game.running) canvas.requestPointerLock() });
+            document.addEventListener('pointerlockchange', () => { Game.running = document.pointerLockElement === canvas; });
+            document.addEventListener('mousemove', e => { 
+                if(!Game.running) return; 
+                const r = this.state.rotation; 
+                r.y -= e.movementX * 0.002; // Rotação no eixo Y (mouse horizontal)
+                r.x -= e.movementY * 0.002; // Rotação no eixo X (mouse vertical)
+                r.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, r.x)); // Limita a rotação vertical
+            });
+            document.addEventListener('keydown', e => { 
+                if(!Game.running) return true; 
+                switch(e.code) { 
+                    case'KeyW':this.controls.moveForward=true;break;
+                    case'KeyS':this.controls.moveBackward=true;break;
+                    case'KeyA':this.controls.moveLeft=true;break;
+                    case'KeyD':this.controls.moveRight=true;break;
+                    case'ShiftLeft':this.controls.sprint=true;break;
+                    case'KeyE':UI.toggleMic();break; 
+                } 
+                if(e.key>='1'&&e.key<='5'){
+                    this.state.selectedSlot=parseInt(e.key)-1;
+                    UI.updateHotbar();
+                } 
+                return false; 
+            });
+            document.addEventListener('keyup', e => { 
+                switch(e.code) { 
+                    case'KeyW':this.controls.moveForward=false;break;
+                    case'KeyS':this.controls.moveBackward=false;break;
+                    case'KeyA':this.controls.moveLeft=false;break;
+                    case'KeyD':this.controls.moveRight=false;break;
+                    case'ShiftLeft':this.controls.sprint=false;break; 
+                } 
+            });
+            document.addEventListener('mousedown', e => { 
+                if(!Game.running) return; 
+                if(e.button === 0) { // Clique esquerdo (usar item ou arremessar pedra)
+                    const i=this.state.hotbar[this.state.selectedSlot];
+                    if(i){
+                        if(i.type === 'stone') Player.throwStone();
+                        else if(typeof i.effect === 'function') {
+                            i.effect();
+                            this.state.hotbar[this.state.selectedSlot] = null;
+                            UI.updateHotbar();
+                        }
+                    }
+                } 
+                if(e.button === 2) UI.handleInteraction(); // Clique direito (interagir)
+            });
+        },
+        throwStone() {
+            const slot = this.state.selectedSlot;
+            const item = this.state.hotbar[slot];
+            if (item && item.type === 'stone') {
+                // Cria projétil como Sprite 2D
+                const pos = this.state.position.clone();
+                const dir = new THREE.Vector3(0,0,-1).applyEuler(this.state.rotation).normalize();
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.assets.textures.get('stone'), fog: true, sizeAttenuation: true }));
+                // Escala igual ao item stone
+                sprite.scale.set(World.WALL_HEIGHT * 0.5, World.WALL_HEIGHT * 0.5, 1);
+                sprite.position.copy(pos);
+                Engine.scene.add(sprite);
+                Player.projectiles.push({ sprite, dir, life: 2 });
+                this.state.hotbar[slot] = null;
+                UI.updateHotbar();
+                play8BitSound('throw');
+            }
+        },
+        updateProjectiles(delta) {
+            for (let i = Player.projectiles.length - 1; i >= 0; i--) {
+                const p = Player.projectiles[i];
+                p.sprite.position.addScaledVector(p.dir, 18 * delta);
+                p.life -= delta;
+                // Hitbox da pedra (AABB)
+                const half = World.WALL_HEIGHT * 0.25;
+                const stoneBox = {
+                    min: new THREE.Vector3(
+                        p.sprite.position.x - half,
+                        p.sprite.position.y - half,
+                        p.sprite.position.z - half
+                    ),
+                    max: new THREE.Vector3(
+                        p.sprite.position.x + half,
+                        p.sprite.position.y + half,
+                        p.sprite.position.z + half
+                    )
+                };
+                // Colisão com monstros (AABB)
+                for (const chunk of World.activeChunks.values()) {
+                    for (const m of chunk.monsters) {
+                        if (!m.sprite) continue;
+                        // Hitbox do monstro (AABB)
+                        const mHalfX = m.sprite.scale.x / 2;
+                        const mHalfY = m.sprite.scale.y / 2;
+                        const mHalfZ = 0.5; // Espessura mínima para sprite
+                        const mBox = {
+                            min: new THREE.Vector3(
+                                m.sprite.position.x - mHalfX,
+                                m.sprite.position.y - mHalfY,
+                                m.sprite.position.z - mHalfZ
+                            ),
+                            max: new THREE.Vector3(
+                                m.sprite.position.x + mHalfX,
+                                m.sprite.position.y + mHalfY,
+                                m.sprite.position.z + mHalfZ
+                            )
+                        };
+                        if (aabbIntersect(stoneBox, mBox)) {
+                            m.health -= 50;
+                            Engine.scene.remove(p.sprite);
+                            Player.projectiles.splice(i, 1);
+                            play8BitSound('monster');
+                            if (m.health <= 0) {
+                                Engine.scene.remove(m.sprite);
+                                m.sprite = null;
+                            }
+                            return;
+                        }
+                    }
+                }
+                // Remove se acabar o tempo
+                if (p.life <= 0) {
+                    Engine.scene.remove(p.sprite);
+                    Player.projectiles.splice(i, 1);
+                }
+            }
+        },
+        updateMonsters(delta) {
+            for (const chunk of World.activeChunks.values()) {
+                for (const m of chunk.monsters) {
+                    if (!m.sprite) continue;
+                    const playerPos = Player.state.position;
+                    // Hitbox do monstro (AABB)
+                    const mHalfX = m.sprite.scale.x / 2;
+                    const mHalfY = m.sprite.scale.y / 2;
+                    const mHalfZ = 0.5;
+                    const mBox = {
+                        min: new THREE.Vector3(
+                            m.sprite.position.x - mHalfX,
+                            m.sprite.position.y - mHalfY,
+                            m.sprite.position.z - mHalfZ
+                        ),
+                        max: new THREE.Vector3(
+                            m.sprite.position.x + mHalfX,
+                            m.sprite.position.y + mHalfY,
+                            m.sprite.position.z + mHalfZ
+                        )
+                    };
+                    // Hitbox do player (AABB)
+                    const pHalf = Player.PLAYER_RADIUS;
+                    const pBox = {
+                        min: new THREE.Vector3(
+                            playerPos.x - pHalf,
+                            playerPos.y - pHalf,
+                            playerPos.z - pHalf
+                        ),
+                        max: new THREE.Vector3(
+                            playerPos.x + pHalf,
+                            playerPos.y + pHalf,
+                            playerPos.z + pHalf
+                        )
+                    };
+                    // Dano ao player se encostar
+                    if (aabbIntersect(mBox, pBox)) {
+                        Player.state.stats.health -= 25 * delta;
+                        UI.showDamageEffect();
+                        play8BitSound('damage');
+                    }
+                    // Persegue o jogador se estiver próximo
+                    const dist = m.sprite.position.distanceTo(playerPos);
+                    if (dist < 18) {
+                        const dir = playerPos.clone().sub(m.sprite.position).setY(0).normalize();
+                        m.sprite.position.addScaledVector(dir, 4 * delta);
+                    }
+                }
+            }
+        },
+    };
+
+    const UI = {
+        elements: {},
+        init() { 
+            this.elements={
+                seed:document.getElementById('seed-input'),
+                renderSlider:document.getElementById('render-distance-slider'),
+                renderValue:document.getElementById('render-distance-value'),
+                startButton:document.getElementById('start-button'),
+                peerId:document.getElementById('my-peer-id'),
+                peerIdRow:document.getElementById('peer-id-row'),
+                health:document.getElementById('health-bar-fill'),
+                stamina:document.getElementById('stamina-bar-fill'),
+                sanity:document.getElementById('sanity-bar-fill'),
+                hunger:document.getElementById('hunger-bar-fill'),
+                prompt:document.getElementById('interaction-prompt'),
+                sanityOverlay:document.getElementById('sanity-overlay')
+            };
+            const savedSeed=localStorage.getItem('b_seed')||Date.now();
+            const savedRenderDist=localStorage.getItem('b_render')||3;
+            this.elements.seed.value=savedSeed;
+            this.elements.renderSlider.value=savedRenderDist;
+            this.elements.renderValue.textContent=savedRenderDist;
+            this.elements.renderSlider.addEventListener('input',e=>this.elements.renderValue.textContent=e.target.value);
+            this.elements.startButton.addEventListener('click',()=>Game.start()); 
+        },
+        update() { 
+            const s=Player.state.stats;
+            this.elements.health.style.width=s.health+'%';
+            this.elements.stamina.style.width=s.stamina+'%';
+            this.elements.sanity.style.width=s.sanity+'%';
+            this.elements.hunger.style.width=s.hunger+'%';
+            this.updateMinimap();
+            this.updateInteractionPrompt();
+            this.updateSanityEffect(s.sanity); 
+        },
+        updateHotbar(){
+            for(let i=0;i<5;i++){
+                const s=document.getElementById(`slot-${i+1}`);
+                s.classList.toggle('selected',i===Player.state.selectedSlot);
+                const item=Player.state.hotbar[i];
+                // Corrige para sprites: pega textura de SpriteMaterial se não houver .texture
+                let tex=null;
+                if(item){
+                    if(item.texture && item.texture.image) tex = item.texture;
+                    else if(item.sprite && item.sprite.material && item.sprite.material.map) tex = item.sprite.material.map;
+                }
+                // Corrige bug: só define backgroundImage se tex.image.src existir e não for undefined
+                if(tex && tex.image && tex.image.src){
+                    s.style.backgroundImage = `url('${tex.image.src}')`;
+                    s.style.opacity = '1';
+                } else {
+                    s.style.backgroundImage = 'none';
+                    s.style.opacity = '0.3'; // slot vazio fica levemente transparente
+                }
+                s.textContent=item?'':(i+1);
+            }
+            // Exibe o nome do item selecionado acima da hotbar
+            let nameBar = document.getElementById('hotbar-item-name');
+            if (!nameBar) {
+                nameBar = document.createElement('div');
+                nameBar.id = 'hotbar-item-name';
+                nameBar.style.position = 'absolute';
+                nameBar.style.bottom = '90px';
+                nameBar.style.left = '50%';
+                nameBar.style.transform = 'translateX(-50%)';
+                nameBar.style.color = '#fff';
+                nameBar.style.fontFamily = 'Courier New, monospace';
+                nameBar.style.fontSize = '1.2em';
+                nameBar.style.textShadow = '2px 2px 4px #000, 0 0 8px #000';
+                nameBar.style.pointerEvents = 'none';
+                nameBar.style.textAlign = 'center';
+                nameBar.style.minWidth = '120px';
+                nameBar.style.zIndex = 20;
+                document.body.appendChild(nameBar);
+            }
+            const selected = Player.state.hotbar[Player.state.selectedSlot];
+            let name = '';
+            if(selected){
+                // Nome amigável
+                switch(selected.type){
+                    case 'food': name = 'Comida'; break;
+                    case 'medkit': name = 'Kit Médico'; break;
+                    case 'pills': name = 'Pílulas'; break;
+                    case 'stone': name = 'Pedra'; break;
+                    default: name = selected.type||'Item';
+                }
+            }
+            nameBar.textContent = name;
+            nameBar.style.display = name ? 'block' : 'none';
+        },
+        updateMinimap(){
+            const ctx=document.getElementById('minimap-canvas').getContext('2d'),
+            cv=ctx.canvas,
+            visSize=World.CHUNK_SIZE*Game.RENDER_DISTANCE*1.5, // Tamanho visível no minimapa
+            pxSize=cv.width/visSize; // Tamanho do pixel no minimapa
+            ctx.fillStyle='#000';
+            ctx.fillRect(0,0,cv.width,cv.height);
+            const pX=Math.floor(Player.state.position.x/World.WALL_HEIGHT),
+            pZ=Math.floor(Player.state.position.z/World.WALL_HEIGHT);
+            for(let i=0;i<visSize;i++){
+                for(let j=0;j<visSize;j++){
+                    const wX=pX-Math.floor(visSize/2)+i,
+                    wZ=pZ-Math.floor(visSize/2)+j,
+                    tile=World.getTileData(wX * World.WALL_HEIGHT, wZ * World.WALL_HEIGHT); // Passa coordenadas de mundo para getTileData
+                    if(tile.id===1)ctx.fillStyle='#555'; // Parede
+                    else if(tile.id===2)ctx.fillStyle='#ff0'; // Saída
+                    else ctx.fillStyle='#bbb'; // Caminho
+                    ctx.fillRect(i*pxSize,j*pxSize,pxSize,pxSize)
+                }
+            }
+            // Desenha o jogador no minimapa
+            const dX=cv.width/2,dY=cv.height/2;
+            ctx.save();
+            ctx.translate(dX,dY);
+            ctx.rotate(-Player.state.rotation.y+Math.PI/2); // Rotação do jogador
+            ctx.fillStyle='#f00';
+            ctx.beginPath();
+            ctx.moveTo(0,-5);
+            ctx.lineTo(-3,3);
+            ctx.lineTo(3,3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        },
+        handleInteraction(){
+            const raycaster=new THREE.Raycaster();
+            raycaster.setFromCamera({x:0,y:0},Engine.camera);
+            let closestItem=null,dist=4,hitExit=false;
+            for(const c of World.activeChunks.values()){
+                const itemHits=raycaster.intersectObjects(c.items.map(i=>i.sprite));
+                if(itemHits.length>0&&itemHits[0].distance<dist){
+                    dist=itemHits[0].distance;
+                    const s=itemHits[0].object;
+                    closestItem={item:c.items.find(i=>i.sprite===s),chunk:c}
+                }
+                const exitHits=raycaster.intersectObjects(c.exits);
+                if(exitHits.length>0&&exitHits[0].distance<5)hitExit=true;
+            }
+            if(hitExit){
+                play8BitSound('door');
+                Game.win(); // Mostra tela de vitória ao interagir com a porta de saída
+            }
+            else if(closestItem){ // Se um item for pego
+                const slot=Player.state.hotbar.indexOf(null);
+                if(slot!==-1){
+                    Player.state.hotbar[slot]=closestItem.item;
+                    const idx=closestItem.chunk.items.indexOf(closestItem.item);
+                    Engine.scene.remove(closestItem.item.sprite);
+                    closestItem.chunk.items.splice(idx,1);
+                    this.updateHotbar();
+                    play8BitSound('pickup');
+                }
+            }
+        },
+        updateInteractionPrompt(){
+            const raycaster=new THREE.Raycaster();
+            raycaster.setFromCamera({x:0,y:0},Engine.camera);
+            let promptText='';
+            for(const c of World.activeChunks.values()){
+                const itemHits=raycaster.intersectObjects(c.items.map(i=>i.sprite));
+                if(itemHits.length>0&&itemHits[0].distance<4){
+                    const item=c.items.find(i=>i.sprite===itemHits[0].object);
+                    promptText=`[RMB] Pegar ${item.type}`;
+                    break;
+                }
+                const exitHits=raycaster.intersectObjects(c.exits);
+                if(exitHits.length>0&&exitHits[0].distance<5){
+                    promptText=`[RMB] Tentar a Saída`;
+                    break;
+                }
+            }
+            this.elements.prompt.textContent=promptText;
+            this.elements.prompt.style.display=promptText?'block':'none';
+        },
+        updateSanityEffect(sanity){
+            const intensity=Math.max(0,1-sanity/100);
+            this.elements.sanityOverlay.style.boxShadow=`inset 0 0 ${intensity*200}px ${intensity*50}px rgba(0,0,0,${intensity*0.8})`
+        },
+        showDamageEffect(){
+            const v=document.getElementById('damage-vignette');
+            v.classList.add('active');
+            setTimeout(()=>v.classList.remove('active'),200)
+        },
+        toggleMic(){
+            Player.state.micMuted=!Player.state.micMuted;
+            if(Player.state.localStream)Player.state.localStream.getAudioTracks().forEach(t=>t.enabled=!Player.state.micMuted);
+            const micStatus=document.getElementById('mic-status');
+            micStatus.textContent=`MIC: ${Player.state.micMuted?'OFF':'ON'}`;
+            micStatus.style.color=Player.state.micMuted?'#f55':'#5f5'
+        },
+        setPeerId(id, isError=false){
+            this.elements.peerId.textContent=id;
+            if(isError)this.elements.peerId.style.color='red';
+            this.elements.peerIdRow.style.visibility='visible';
+        },
+        showScreen(id,text=''){
+            document.getElementById(id).style.display='flex';
+            if(text)document.getElementById('loading-status').textContent=text
+        },
+        hideScreen(id){document.getElementById(id).style.display='none'},
+        showHUD(){document.getElementById('hud-container').style.visibility='visible'},
+        hideHUD(){document.getElementById('hud-container').style.visibility='hidden'}, // Adicionada a função hideHUD
+        showJumpscare() {
+            const overlay = document.getElementById('jumpscare-overlay');
+            overlay.style.display = 'flex';
+            play8BitSound('jumpscare');
+            setTimeout(() => { overlay.style.display = 'none'; }, 1000);
+        },
+        // Implementação de um gerador de número pseudo-aleatório (PRNG) Mulberry32
+        Mulberry32(s) { 
+            return function() { 
+                s+=0x6D2B79F5; 
+                s=Math.imul(s^s>>>15,s|1); 
+                s^=s+Math.imul(s^s>>>7,s|61); 
+                return ((s^s>>>14)>>>0)/4294967296; 
+            } 
+        }
+    };
+    
+    const Net = {
+        peer: null, connections: {}, remotePlayers: {},
+        init() { 
+            try {
+                const myIdInput = document.getElementById('peer-id-input');
+                const myId = myIdInput && myIdInput.value ? myIdInput.value : undefined;
+                this.peer = myId ? new Peer(myId) : new Peer();
+                this.peer.on('open', id => { 
+                    Player.state.id = id; 
+                    UI.setPeerId(id); 
+                    // Tenta obter acesso ao microfone do usuário
+                    navigator.mediaDevices.getUserMedia({video:false,audio:true}).then(s=>{
+                        Player.state.localStream=s
+                    }).catch(e=>console.error('Mic denied:',e)); 
+                }); 
+                this.peer.on('connection', c => this.setupConnection(c)); 
+                this.peer.on('call', c => { 
+                    if(!Player.state.localStream)return; 
+                    c.answer(Player.state.localStream); 
+                    this.setupCall(c); 
+                }); 
+                this.peer.on('error', err => { 
+                    console.error("PeerJS Error:", err); 
+                    UI.setPeerId("Falha na Rede", true); 
+                }); 
+            } catch (e) { 
+                console.error("Falha ao inicializar PeerJS.", e); 
+                UI.setPeerId("Rede Desabilitada", true); 
+            } 
+        },
+        connectToPeer(id){
+            if(!this.peer)return;
+            const c=this.peer.connect(id);
+            this.setupConnection(c);
+            if(Player.state.localStream){
+                const call=this.peer.call(id,Player.state.localStream);
+                this.setupCall(call)
+            }
+        },
+        setupConnection(c){
+            c.on('open',()=>{
+                this.connections[c.peer]=c;
+                this.addRemotePlayer(c.peer);
+                // Envia nickname ao conectar
+                c.send({id:Player.state.id,nick:Player.state.nickname,pos:Player.state.position});
+            });
+            c.on('data',d=>{
+                let p=this.remotePlayers[d.id];
+                if(p){
+                    p.sprite.position.set(d.pos.x,d.pos.y,d.z);
+                    p.position.copy(d.pos);
+                    // Atualiza nickname se mudou
+                    if(d.nick && d.nick!==p.nickname){
+                        p.nickname = d.nick;
+                        if(p.nicknameMesh) Engine.scene.remove(p.nicknameMesh);
+                        p.nicknameMesh = createNicknameMesh(d.nick);
+                        Engine.scene.add(p.nicknameMesh);
+                    }
+                    // Atualiza posição do nickname
+                    if(p.nicknameMesh){
+                        p.nicknameMesh.position.set(
+                            d.pos.x,
+                            d.pos.y + World.WALL_HEIGHT * 0.7,
+                            d.z
+                        );
+                        p.nicknameMesh.quaternion.copy(Engine.camera.quaternion);
+                    }
+                }
+            });
+            c.on('close',()=>this.removeRemotePlayer(c.peer));
+        },
+        setupCall(c){
+            c.on('stream',remoteStream=>{
+                const p=this.remotePlayers[c.peer];
+                if(p){
+                    const a=document.createElement('audio');
+                    a.srcObject=remoteStream;
+                    a.play();
+                    p.audioElement=a;
+                    document.getElementById('remote-audio-container').appendChild(a)
+                }
+            })
+        },
+        broadcastState(){
+            if(!this.peer || Object.keys(this.connections).length === 0)return;
+            const data={id:Player.state.id,pos:Player.state.position,nick:Player.state.nickname};
+            for(const p in this.connections)this.connections[p].send(data);
+        },
+        addRemotePlayer(id){
+            if(this.remotePlayers[id])return;
+            const s=new THREE.Sprite(new THREE.SpriteMaterial({map:Game.assets.textures.get('player'),fog:true}));
+            s.scale.set(Player.PLAYER_RADIUS * 2, World.WALL_HEIGHT * 0.9, 1);
+            const remote = {id,sprite:s,position:new THREE.Vector3(),audioElement:null,nickname:'',nicknameMesh:null};
+            Engine.scene.add(s);
+            // Cria nicknameMesh vazio (será atualizado ao receber dados)
+            remote.nicknameMesh = createNicknameMesh('');
+            Engine.scene.add(remote.nicknameMesh);
+            this.remotePlayers[id]=remote;
+        },
+        removeRemotePlayer(id){
+            if(this.remotePlayers[id]){
+                Engine.scene.remove(this.remotePlayers[id].sprite);
+                if(this.remotePlayers[id].audioElement)this.remotePlayers[id].audioElement.remove();
+                if(this.remotePlayers[id].nicknameMesh) Engine.scene.remove(this.remotePlayers[id].nicknameMesh);
+                delete this.remotePlayers[id];
+                delete this.connections[id];
+            }
+        }
+    };
+
+    const Game = {
+        RENDER_DISTANCE: 3, running: false, playerSpawned: false, lastChunkCheck: 0,
+        lastPlayerChunkX: null, lastPlayerChunkZ: null, // Inicializa as últimas coordenadas do chunk do jogador
+        assets: { textures: new Map(), sounds: new Map() },
+        
+        async init() {
+            UI.showScreen('loading-screen', 'Configurando motor...'); Engine.init(); UI.init();
+            UI.showScreen('loading-screen', 'Carregando assets...'); 
+            this.assets = await this.loadAssets();
+            Net.init();
+            UI.hideScreen('loading-screen'); UI.showScreen('menu-container');
+        },
+        async loadAssets() {
+            const textureLoader = new THREE.TextureLoader();
+            const assetsToLoad = { 
+                textures: [
+                    ['wall','parede1.png'],
+                    ['floor','chao1.jpg'],
+                    ['ceiling','ceiling1.jpeg'],
+                    ['exit','porta1.jpg'],
+                    ['monster','monster1.png'],
+                    ['player','player.webp'],
+                    ['food','comida1.webp'],
+                    ['medkit','medkit1.png'],
+                    ['pills','remedio1.avif'],
+                    ['stone','pedra1.webp'],
+                    ['jumpscare','jumpscare1.gif']
+                ]
+            };
+            // Função para forçar textura pixelada (resize para 32x32)
+            function forcePixelTexture(img, size = 32) {
+                const c = document.createElement('canvas');
+                c.width = c.height = size;
+                const ctx = c.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                ctx.clearRect(0, 0, size, size);
+                ctx.drawImage(img, 0, 0, size, size);
+                return new THREE.Texture(c);
+            }
+            const texturePromises = assetsToLoad.textures.map(([key, url]) => new Promise(res => {
+                textureLoader.load(url, tex => {
+                    // Força pixelização: reescala para 32x32
+                    const img = tex.image;
+                    const pixelTex = forcePixelTexture(img, 32);
+                    pixelTex.magFilter = THREE.NearestFilter;
+                    pixelTex.minFilter = THREE.NearestFilter;
+                    pixelTex.needsUpdate = true;
+                    Game.assets.textures.set(key, pixelTex);
+                    res();
+                });
+            }));
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const soundNames = ['monster_ambient', 'footstep'];
+            const audioPromises = soundNames.map(key => new Promise(res => { 
+                const duration = key === 'footstep' ? 0.2 : 1.0; 
+                const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate); 
+                const data = buffer.getChannelData(0); 
+                for (let i = 0; i < data.length; i++) { 
+                    const t = i / audioCtx.sampleRate; 
+                    const freq = key === 'footstep' ? 200 : 80; 
+                    data[i] = Math.sin(t * Math.PI * 2 * freq) * Math.exp(-t * 10) * (key === 'footstep' ? 0.5 : 1); 
+                } 
+                Game.assets.sounds.set(key, buffer); 
+                res(); 
+            }));
+            await Promise.all([...texturePromises, ...audioPromises]); 
+            // Garante que todas as texturas fiquem pixeladas (filtro nearest)
+            for (const tex of Game.assets.textures.values()) {
+                tex.magFilter = THREE.NearestFilter;
+                tex.minFilter = THREE.NearestFilter;
+                tex.needsUpdate = true;
+            }
+            return { textures: Game.assets.textures, sounds: Game.assets.sounds };
+        },
+        async start() {
+            const seed = document.getElementById('seed-input').value; 
+            this.RENDER_DISTANCE = parseInt(document.getElementById('render-distance-slider').value);
+            localStorage.setItem('b_seed', seed); 
+            localStorage.setItem('b_render', this.RENDER_DISTANCE);
+            Engine.scene.fog.density = 0.25 / (this.RENDER_DISTANCE * World.CHUNK_SIZE); 
+            World.init(seed); 
+            Player.init();
+            UI.hideScreen('menu-container'); 
+            UI.showScreen('loading-screen', 'Gerando mundo...');
+            const peerId = document.getElementById('peer-id-input').value; 
+            if(peerId) Net.connectToPeer(peerId);
+            await World.updateVisibleChunks(true); 
+            UI.hideScreen('loading-screen'); 
+            UI.showHUD();
+            this.running = true; 
+            this.loop(); 
+        },
+        loop() {
+            if(!this.running) return;
+            requestAnimationFrame(() => this.loop()); 
+            const delta = Math.min(Engine.clock.getDelta(), 0.1); 
+            Player.update(delta); 
+            World.updateVisibleChunks(); 
+            Player.updateMonsters(delta);
+            UI.update();
+            Net.broadcastState(); 
+            Engine.render(); 
+        },
+        win() { this.running = false; play8BitSound('win'); UI.showScreen('win-screen'); },
+        gameOver() { // Nova função para Game Over
+            this.running = false;
+            play8BitSound('gameover');
+            // Opcional: parar todos os sons ou tocar um som de game over
+            UI.hideHUD(); // Esconde a HUD
+            UI.showScreen('game-over-screen'); // Mostra a tela de game over
+        }
+    };
+
+    window.addEventListener('error', e => { console.error("ERRO GLOBAL NÃO TRATADO:", e.error); });
+    window.addEventListener('DOMContentLoaded', () => Game.init()); 
+
+    // Função utilitária para colisão AABB 3D (cubos)
+    function aabbIntersect(a, b) {
+        return (
+            a.min.x <= b.max.x && a.max.x >= b.min.x &&
+            a.min.y <= b.max.y && a.max.y >= b.min.y &&
+            a.min.z <= b.max.z && a.max.z >= b.min.z
+        );
+    }
+
+    // Função utilitária para criar mesh de nickname (sempre branco, visível, sem iluminação, depthTest: false)
+    function createNicknameMesh(text) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#fff';
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        const tex = new THREE.Texture(canvas);
+        tex.needsUpdate = true;
+        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, fog: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(World.WALL_HEIGHT * 2, World.WALL_HEIGHT * 0.5, 1);
+        sprite.renderOrder = 9999;
+        sprite.material.transparent = true;
+        return sprite;
+    }
+
+    // --- SONS 8-BIT GERADOS VIA WEB AUDIO API ---
+    // Contexto de áudio global para evitar bloqueio de autoplay e múltiplas instâncias
+    let _8bitAudioCtx = null;
+    function get8BitAudioCtx() {
+        if (!_8bitAudioCtx) {
+            _8bitAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // Desbloqueia o contexto em QUALQUER interação do usuário
+            const unlock = () => {
+                if (_8bitAudioCtx.state === 'suspended') _8bitAudioCtx.resume();
+            };
+            window.addEventListener('click', unlock);
+            window.addEventListener('keydown', unlock);
+            window.addEventListener('focus', unlock);
+            window.addEventListener('pointerdown', unlock);
+        }
+        return _8bitAudioCtx;
+    }
+    function play8BitSound(type) {
+        const ctx = get8BitAudioCtx();
+        let now = ctx.currentTime;
+        function beep(freq, dur, vol, type='square', when=0) {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = type;
+            o.frequency.value = freq;
+            g.gain.value = vol; // volume absoluto por tipo
+            o.connect(g); g.connect(ctx.destination);
+            o.start(now + when);
+            o.stop(now + when + dur);
+            o.onended = () => { o.disconnect(); g.disconnect(); };
+        }
+        switch(type) {
+            case 'pickup':
+                beep(1040,0.09,0.0065,'square'); beep(1560,0.09,0.045,'square',0.09);
+                break;
+            case 'damage':
+                beep(180,0.13,0.0002,'square'); beep(90,0.11,0.000225,'square',0.013);
+                break;
+            case 'jumpscare':
+                beep(60,0.18,0.09,'sawtooth'); beep(180,0.12,0.065,'triangle',0.18);
+                break;
+            case 'win':
+                beep(660,0.13,0.0065,'square'); beep(880,0.13,0.0065,'square',0.13); beep(1320,0.18,0.05,'square',0.26);
+                break;
+            case 'gameover':
+                beep(220,0.18,0.005,'triangle'); beep(110,0.22,0.004,'triangle',0.18);
+                break;
+            case 'footstep':
+                beep(220,0.05,0.003,'square');
+                break;
+            case 'monster':
+                // Novo som: mistura triangle, square e sawtooth, frequências variadas, volume ainda mais reduzido
+                beep(90, 0.13, 5.8, 'triangle');
+                beep(180, 0.11, 6.4, 'square', 0.13);
+                beep(120, 0.09, 6.4, 'sawtooth', 0.24);
+                break;
+            case 'throw':
+                beep(400,0.07,0.035,'square');
+                break;
+            case 'door':
+                beep(300,0.11,0.035,'triangle'); beep(200,0.09,0.025,'triangle',0.11);
+                break;
+            case 'use':
+                beep(900,0.08,0.035,'triangle');
+                break;
+            case 'medkit':
+                beep(600,0.09,0.035,'triangle'); beep(1200,0.09,0.025,'triangle',0.09);
+                break;
+            case 'pills':
+                beep(800,0.08,0.035,'triangle'); beep(1600,0.08,0.025,'triangle',0.08);
+                break;
+            case 'eat':
+                beep(400,0.09,0.035,'square'); beep(200,0.09,0.025,'square',0.09);
+                break;
+            case 'key':
+                beep(1400,0.07,0.035,'square'); beep(1800,0.07,0.025,'square',0.07);
+                break;
+        }
+    }
+
+    // Ref. garantir chamada play8BitSound nos eventos do jogo
+    // Exemplo: passos do jogador
+    const origUpdateMovement = Player.updateMovement;
+    Player.updateMovement = function(delta) {
+        origUpdateMovement.call(this, delta);
+        // Sons de passos (reforçado)
+        const actualMovement = this.state.velocity.lengthSq();
+        if (actualMovement > 0.01) {
+            const time = Engine.clock.getElapsedTime();
+            const stepInterval = this.controls.sprint ? 0.3 : 0.4;
+            if (time - this.lastFootstep > stepInterval) {
+                play8BitSound('footstep');
+                this.lastFootstep = time;
+            }
+        }
+    };
+    // Garanta que play8BitSound seja chamado em todos os eventos relevantes (pickup, damage, win, gameover, throw, jumpscare, use, door, etc.)
+    // Exemplo para pickup:
+    const origHandleInteraction = UI.handleInteraction;
+    UI.handleInteraction = function() {
+        let before = Player.state.hotbar.slice();
+        origHandleInteraction.call(this);
+        for (let i = 0; i < 5; i++) {
+            if (!before[i] && Player.state.hotbar[i]) {
+                play8BitSound('pickup');
+            }
+        }
+    };
+    // Exemplo para dano:
+    const origShowDamageEffect = UI.showDamageEffect;
+    UI.showDamageEffect = function() {
+        play8BitSound('damage');
+        origShowDamageEffect.call(this);
+    };
+    // Exemplo para vitória/game over:
+    const origWin = Game.win;
+    Game.win = function() {
+        play8BitSound('win');
+        origWin.call(this);
+    };
+    const origGameOver = Game.gameOver;
+    Game.gameOver = function() {
+        play8BitSound('gameover');
+        origGameOver.call(this);
+    };
+    // Exemplo para arremessar pedra:
+    const origThrowStone = Player.throwStone;
+    Player.throwStone = function() {
+        play8BitSound('throw');
+        origThrowStone.call(this);
+    };
+    // Exemplo para jumpscare:
+    const origShowJumpscare = UI.showJumpscare;
+    UI.showJumpscare = function() {
+        play8BitSound('jumpscare');
+        origShowJumpscare.call(this);
+    };
+    // Exemplo para uso de item:
+    const origMousedown = document.onmousedown;
+    document.addEventListener('mousedown', function(e) {
+        if (!Game.running) return;
+        if (e.button === 0) {
+            const i = Player.state.hotbar[Player.state.selectedSlot];
+            if (i && i.effect) play8BitSound('use');
+        }
+        if (origMousedown) origMousedown(e);
+    });
+    // Exemplo para porta:
+    const origUpdateInteractionPrompt = UI.updateInteractionPrompt;
+    UI.updateInteractionPrompt = function() {
+        origUpdateInteractionPrompt.call(this);
+        const prompt = this.elements.prompt.textContent;
+        if (prompt && prompt.includes('Saída')) {
+            play8BitSound('door');
+        }
+    };
+</script>
+</body>
+</html>
